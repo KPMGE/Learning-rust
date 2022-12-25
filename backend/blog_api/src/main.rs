@@ -1,9 +1,10 @@
 use std::io::{Error, ErrorKind};
 use std::str::FromStr;
+use serde::Serialize;
 
 use warp::Filter;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct Question {
   id: QuestionId,
   title: String,
@@ -11,7 +12,7 @@ struct Question {
   tags: Option<Vec<String>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct QuestionId(String);
 
 impl FromStr for QuestionId {
@@ -36,9 +37,29 @@ impl Question {
   }
 }
 
+async fn get_questions() -> Result<impl warp::Reply, warp::Rejection> {
+  let question = Question::new(
+    QuestionId::from_str("1234").expect("no id provided"),
+    "the final question".to_string(),
+    "what's the answer for the life, the universe and everything?".to_string(),
+    Some(vec![
+      "faq".to_string(),
+      "universe".to_string()
+    ])
+  );
+
+  Ok(warp::reply::json(&question))
+}
+
 #[tokio::main]
 async fn main() {
-  let hi = warp::path("hello").map(|| format!("Hello world"));
-  println!("listening on: http://locahost:3333");
-  warp::serve(hi).run(([127, 0, 0, 1], 3333)).await;
+  let get_questions_route = warp::get()
+    .and(warp::path("questions"))
+    .and(warp::path::end())
+    .and_then(get_questions);
+
+  let routes = get_questions_route;
+
+  println!("Listening on: http://locahost:3333");
+  warp::serve(routes).run(([127, 0, 0, 1], 3333)).await;
 }
