@@ -57,7 +57,17 @@ async fn error_handler(r: Rejection) -> Result<impl Reply, Rejection> {
   }
 }
 
-async fn get_questions(store: Store) -> Result<impl warp::Reply, warp::Rejection> {
+async fn get_questions(params: HashMap<String, String>, store: Store) -> Result<impl warp::Reply, warp::Rejection> {
+  println!("params: {:?}", params);
+
+  let mut start = 0;
+
+  if let Some(n) = params.get("start") {
+    start = n.parse::<usize>().expect("could not parse params start as a number");
+  }
+
+  println!("start: {}", start);
+
   let res: Vec<Question> = store.questions.values().cloned().collect();
   Ok(warp::reply::json(&res))
 }
@@ -74,6 +84,7 @@ async fn main() {
 
   let get_questions_route = warp::get()
     .and(warp::path("questions"))
+    .and(warp::query())
     .and(warp::path::end())
     .and(store_filter)
     .and_then(get_questions)
