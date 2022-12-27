@@ -1,12 +1,31 @@
+use std::fmt;
 use std::io::{Error, ErrorKind};
 use std::str::FromStr;
 use serde::{Serialize, Deserialize};
 
 use warp::cors::CorsForbidden;
 use warp::hyper::{StatusCode, Method};
+use warp::reject::Reject;
 use warp::{Filter, Rejection, Reply};
 
 use std::collections::HashMap;
+
+#[derive(Debug)]
+enum ApiError {
+  ParseError(std::num::ParseIntError),
+  MissingParamError
+}
+
+impl std::fmt::Display for ApiError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      ApiError::ParseError(ref err) => writeln!(f, "could not parse parameter: {}", err),
+      ApiError::MissingParamError => writeln!(f, "missing parameter") 
+    }
+  }
+}
+
+impl Reject for ApiError {}
 
 #[derive(Clone)]
 struct Store {
