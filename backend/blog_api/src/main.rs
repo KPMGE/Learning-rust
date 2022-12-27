@@ -11,6 +11,23 @@ use warp::{Filter, Rejection, Reply};
 use std::collections::HashMap;
 
 #[derive(Debug)]
+struct Pagination {
+  start: usize,
+  end: usize
+}
+
+fn extract_pagination(params: HashMap<String, String>) -> Result<Pagination, ApiError> {
+  if params.contains_key("start") && params.contains_key("end") {
+    return Ok(Pagination { 
+      start: params.get("start").unwrap().parse::<usize>().map_err(ApiError::ParseError)?, 
+      end: params.get("end").unwrap().parse::<usize>().map_err(ApiError::ParseError)?
+    })
+  }
+
+  Err(ApiError::MissingParamError)
+}
+
+#[derive(Debug)]
 enum ApiError {
   ParseError(std::num::ParseIntError),
   MissingParamError
@@ -71,24 +88,23 @@ impl FromStr for QuestionId {
 async fn error_handler(r: Rejection) -> Result<impl Reply, Rejection> {
   if let Some(error) = r.find::<CorsForbidden>() {
     Ok(warp::reply::with_status(error.to_string(), StatusCode::FORBIDDEN))
+  } else if let Some(error) = r.find::<ApiError>() {
+    Ok(warp::reply::with_status(error.to_string(), StatusCode::RANGE_NOT_SATISFIABLE))
   } else {
     Ok(warp::reply::with_status("Route not found".to_string(), StatusCode::NOT_FOUND))
   }
 }
 
 async fn get_questions(params: HashMap<String, String>, store: Store) -> Result<impl warp::Reply, warp::Rejection> {
-  println!("params: {:?}", params);
-
-  let mut start = 0;
-
-  if let Some(n) = params.get("start") {
-    start = n.parse::<usize>().expect("could not parse params start as a number");
+  if params.len() > 0 {
+    let pagination = extract_pagination(params)?;
+    let res: Vec<Question> = store.questions.values().cloned().collect();
+    let res = &res[pagination.start..pagination.end];
+    Ok(warp::reply::json(&res))
+  } else {
+    let res: Vec<Question> = store.questions.values().cloned().collect();
+    Ok(warp::reply::json(&res))
   }
-
-  println!("start: {}", start);
-
-  let res: Vec<Question> = store.questions.values().cloned().collect();
-  Ok(warp::reply::json(&res))
 }
 
 #[tokio::main]
