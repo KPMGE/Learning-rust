@@ -1,8 +1,11 @@
 use std::fmt;
 use std::io::{Error, ErrorKind};
 use std::str::FromStr;
+use std::sync::Arc;
+use parking_lot::RwLock;
 use serde::{Serialize, Deserialize};
 
+use warp::body::BodyDeserializeError;
 use warp::cors::CorsForbidden;
 use warp::hyper::{StatusCode, Method};
 use warp::reject::Reject;
@@ -30,14 +33,16 @@ fn extract_pagination(params: HashMap<String, String>) -> Result<Pagination, Api
 #[derive(Debug)]
 enum ApiError {
   ParseError(std::num::ParseIntError),
-  MissingParamError
+  MissingParamError,
+  QuestionNotFound
 }
 
 impl std::fmt::Display for ApiError {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       ApiError::ParseError(ref err) => writeln!(f, "could not parse parameter: {}", err),
-      ApiError::MissingParamError => writeln!(f, "missing parameter") 
+      ApiError::MissingParamError => writeln!(f, "missing parameter"), 
+      ApiError::QuestionNotFound => writeln!(f, "question not found") 
     }
   }
 }
@@ -46,7 +51,7 @@ impl Reject for ApiError {}
 
 #[derive(Clone)]
 struct Store {
-  questions: HashMap<QuestionId, Question>
+  questions: Arc<RwLock<HashMap<QuestionId, Question>>>
 }
 
 impl Store {
@@ -56,12 +61,11 @@ impl Store {
     }
   }
 
-  fn init() -> HashMap<QuestionId, Question> {
+  fn init() -> Arc<RwLock<HashMap<QuestionId, Question>>> {
     let file = include_str!("../questions.json");
     serde_json::from_str(file).expect("could not read file questions.json")
   }
 }
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Question {
@@ -90,6 +94,8 @@ async fn error_handler(r: Rejection) -> Result<impl Reply, Rejection> {
     Ok(warp::reply::with_status(error.to_string(), StatusCode::FORBIDDEN))
   } else if let Some(error) = r.find::<ApiError>() {
     Ok(warp::reply::with_status(error.to_string(), StatusCode::RANGE_NOT_SATISFIABLE))
+  } else if let Some(error) = r.find::<BodyDeserializeError>() {
+    Ok(warp::reply::with_status(error.to_string(), StatusCode::UNPROCESSABLE_ENTITY))
   } else {
     Ok(warp::reply::with_status("Route not found".to_string(), StatusCode::NOT_FOUND))
   }
@@ -98,12 +104,33 @@ async fn error_handler(r: Rejection) -> Result<impl Reply, Rejection> {
 async fn get_questions(params: HashMap<String, String>, store: Store) -> Result<impl warp::Reply, warp::Rejection> {
   if params.len() > 0 {
     let pagination = extract_pagination(params)?;
-    let res: Vec<Question> = store.questions.values().cloned().collect();
+    let res: Vec<Question> = store.questions.read().values().cloned().collect();
     let res = &res[pagination.start..pagination.end];
     Ok(warp::reply::json(&res))
   } else {
-    let res: Vec<Question> = store.questions.values().cloned().collect();
+    let res: Vec<Question> = store.questions.read().values().cloned().collect();
     Ok(warp::reply::json(&res))
+  }
+}
+
+async fn add_question(store: Store, question: Question) -> Result<impl warp::Reply, warp::Rejection> {
+  store.questions.write().insert(question.id.clone(), question);
+  Ok(warp::reply::with_status("Question added", StatusCode::CREATED))
+}
+
+async fn update_question(id: String, store: Store, question: Question) -> Result<impl warp::Reply, warp::Rejection> {
+  match store.questions.write().get_mut(&QuestionId(id)) {
+    Some(q) => *q = question,
+    None => return Err(warp::reject::custom(ApiError::QuestionNotFound))
+  }
+
+  Ok(warp::reply::with_status("question updated", StatusCode::OK))
+}
+
+async fn delete_question(id: String, store: Store) -> Result<impl warp::Reply, warp::Rejection> {
+  match store.questions.write().remove(&QuestionId(id)) {
+    Some(_) => return Ok(warp::reply::with_status("question removed", StatusCode::OK)),
+    None => return Err(warp::reject::custom(ApiError::QuestionNotFound))
   }
 }
 
@@ -122,10 +149,36 @@ async fn main() {
     .and(warp::query())
     .and(warp::path::end())
     .and(store_filter)
-    .and_then(get_questions)
-    .recover(error_handler);
+    .and_then(get_questions);
 
-  let routes = get_questions_route.with(cors);
+  let add_question_route = warp::post()
+    .and(warp::path("questions"))
+    .and(warp::path::end())
+    .and(store_filter.clone())
+    .and(warp::body::json())
+    .and_then(add_question);
+
+  let update_question_route = warp::put()
+    .and(warp::path("questions"))
+    .and(warp::path::param::<String>())
+    .and(warp::path::end())
+    .and(store_filter.clone())
+    .and(warp::body::json())
+    .and_then(update_question);
+
+  let delete_question_route = warp::delete()
+    .and(warp::path("questions"))
+    .and(warp::path::param::<String>())
+    .and(warp::path::end())
+    .and(store_filter.clone())
+    .and_then(delete_question);
+
+  let routes = get_questions_route
+    .or(add_question_route)
+    .or(update_question_route)
+    .or(delete_question_route)
+    .with(cors)
+    .recover(error_handler);
 
   println!("Listening on: http://locahost:3333");
   warp::serve(routes).run(([127, 0, 0, 1], 3333)).await;
