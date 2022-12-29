@@ -1,159 +1,14 @@
-use std::fmt;
-use std::io::{Error, ErrorKind};
-use std::str::FromStr;
-use std::sync::Arc;
-use parking_lot::RwLock;
-use serde::{Serialize, Deserialize};
+use warp::hyper::Method;
+use warp::Filter;
 
-use warp::body::BodyDeserializeError;
-use warp::cors::CorsForbidden;
-use warp::hyper::{StatusCode, Method};
-use warp::reject::Reject;
-use warp::{Filter, Rejection, Reply};
+mod routes;
+mod store;
+mod types;
 
-use std::collections::HashMap;
-
-#[derive(Debug)]
-struct Pagination {
-  start: usize,
-  end: usize
-}
-
-fn extract_pagination(params: HashMap<String, String>) -> Result<Pagination, ApiError> {
-  if params.contains_key("start") && params.contains_key("end") {
-    return Ok(Pagination { 
-      start: params.get("start").unwrap().parse::<usize>().map_err(ApiError::ParseError)?, 
-      end: params.get("end").unwrap().parse::<usize>().map_err(ApiError::ParseError)?
-    })
-  }
-
-  Err(ApiError::MissingParamError)
-}
-
-#[derive(Debug)]
-enum ApiError {
-  ParseError(std::num::ParseIntError),
-  MissingParamError,
-  QuestionNotFound
-}
-
-impl std::fmt::Display for ApiError {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match self {
-      ApiError::ParseError(ref err) => writeln!(f, "could not parse parameter: {}", err),
-      ApiError::MissingParamError => writeln!(f, "missing parameter"), 
-      ApiError::QuestionNotFound => writeln!(f, "question not found") 
-    }
-  }
-}
-
-impl Reject for ApiError {}
-
-#[derive(Clone)]
-struct Store {
-  questions: Arc<RwLock<HashMap<QuestionId, Question>>>,
-  answers: Arc<RwLock<HashMap<String, Answer>>>
-}
-
-impl Store {
-  fn new() -> Self {
-    Store { 
-      questions: Arc::new(RwLock::new(Self::init())),
-      answers: Arc::new(RwLock::new(HashMap::new()))
-    }
-  }
-
-  fn init() -> HashMap<QuestionId, Question> {
-    let file = include_str!("../questions.json");
-    serde_json::from_str(file).expect("could not read file questions.json")
-  }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct Answer {
-  id: String, 
-  question_id: String,
-  content: String
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct Question {
-  id: QuestionId,
-  title: String,
-  content: String,
-  tags: Option<Vec<String>>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Hash, Clone)]
-struct QuestionId(String);
-
-impl FromStr for QuestionId {
-  type Err = Error;
-
-  fn from_str(id: &str) -> Result<Self, Self::Err> {
-    match id.is_empty() {
-      false => Ok(QuestionId(id.to_string())),
-      true => Err(Error::new(ErrorKind::InvalidInput, "No id provided"))
-    }
-  }
-}
-
-async fn error_handler(r: Rejection) -> Result<impl Reply, Rejection> {
-  if let Some(error) = r.find::<CorsForbidden>() {
-    Ok(warp::reply::with_status(error.to_string(), StatusCode::FORBIDDEN))
-  } else if let Some(error) = r.find::<ApiError>() {
-    Ok(warp::reply::with_status(error.to_string(), StatusCode::RANGE_NOT_SATISFIABLE))
-  } else if let Some(error) = r.find::<BodyDeserializeError>() {
-    Ok(warp::reply::with_status(error.to_string(), StatusCode::UNPROCESSABLE_ENTITY))
-  } else {
-    Ok(warp::reply::with_status("Route not found".to_string(), StatusCode::NOT_FOUND))
-  }
-}
-
-async fn get_questions(params: HashMap<String, String>, store: Store) -> Result<impl warp::Reply, warp::Rejection> {
-  if params.len() > 0 {
-    let pagination = extract_pagination(params)?;
-    let res: Vec<Question> = store.questions.read().values().cloned().collect();
-    let res = &res[pagination.start..pagination.end];
-    Ok(warp::reply::json(&res))
-  } else {
-    let res: Vec<Question> = store.questions.read().values().cloned().collect();
-    Ok(warp::reply::json(&res))
-  }
-}
-
-async fn add_question(store: Store, question: Question) -> Result<impl warp::Reply, warp::Rejection> {
-  store.questions.write().insert(question.id.clone(), question);
-  Ok(warp::reply::with_status("Question added", StatusCode::CREATED))
-}
-
-async fn update_question(id: String, store: Store, question: Question) -> Result<impl warp::Reply, warp::Rejection> {
-  match store.questions.write().get_mut(&QuestionId(id)) {
-    Some(q) => *q = question,
-    None => return Err(warp::reject::custom(ApiError::QuestionNotFound))
-  }
-
-  Ok(warp::reply::with_status("question updated", StatusCode::OK))
-}
-
-async fn delete_question(id: String, store: Store) -> Result<impl warp::Reply, warp::Rejection> {
-  match store.questions.write().remove(&QuestionId(id)) {
-    Some(_) => return Ok(warp::reply::with_status("question removed", StatusCode::OK)),
-    None => return Err(warp::reject::custom(ApiError::QuestionNotFound))
-  }
-}
-
-async fn add_anwer(store: Store, params: HashMap<String, String>) -> Result<impl warp::Reply, warp::Rejection> {
-  let answer = Answer{ 
-    id: String::from("1234"), 
-    question_id: String::from(params.get("relationId").unwrap()), 
-    content: String::from(params.get("content").unwrap()) 
-  };
-
-  store.answers.write().insert(answer.id.clone(), answer);
-
-  Ok(warp::reply::with_status("answer added", StatusCode::OK))
-}
+use routes::answer::*;
+use routes::question::*;
+use error_handler::handle_errors;
+use store::Store;
 
 #[tokio::main]
 async fn main() {
@@ -207,7 +62,7 @@ async fn main() {
     .or(delete_question_route)
     .or(add_anwer_route)
     .with(cors)
-    .recover(error_handler);
+    .recover(handle_errors);
 
   println!("Listening on: http://locahost:3333");
   warp::serve(routes).run(([127, 0, 0, 1], 3333)).await;
