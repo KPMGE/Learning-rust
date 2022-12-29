@@ -1,23 +1,23 @@
-use std::sync::Arc;
 use parking_lot::RwLock;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::types::{
   answer::{Answer, AnswerId},
-  question::{Question, QuestionId}
+  question::{Question, QuestionId},
 };
 
 #[derive(Clone)]
 pub struct Store {
   pub questions: Arc<RwLock<HashMap<QuestionId, Question>>>,
-  pub answers: Arc<RwLock<HashMap<AnswerId, Answer>>>
+  pub answers: Arc<RwLock<HashMap<AnswerId, Answer>>>,
 }
 
 impl Store {
   pub fn new() -> Self {
-    Store { 
+    Store {
       questions: Arc::new(RwLock::new(Self::init())),
-      answers: Arc::new(RwLock::new(HashMap::new()))
+      answers: Arc::new(RwLock::new(HashMap::new())),
     }
   }
 

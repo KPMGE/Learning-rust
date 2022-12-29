@@ -7,9 +7,9 @@ mod routes;
 mod store;
 mod types;
 
+use error_handler::handle_errors;
 use routes::answer::*;
 use routes::question::*;
-use error_handler::handle_errors;
 use store::Store;
 
 #[tokio::main]
