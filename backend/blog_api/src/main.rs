@@ -51,20 +51,29 @@ impl Reject for ApiError {}
 
 #[derive(Clone)]
 struct Store {
-  questions: Arc<RwLock<HashMap<QuestionId, Question>>>
+  questions: Arc<RwLock<HashMap<QuestionId, Question>>>,
+  answers: Arc<RwLock<HashMap<String, Answer>>>
 }
 
 impl Store {
   fn new() -> Self {
     Store { 
-      questions: Self::init()
+      questions: Arc::new(RwLock::new(Self::init())),
+      answers: Arc::new(RwLock::new(HashMap::new()))
     }
   }
 
-  fn init() -> Arc<RwLock<HashMap<QuestionId, Question>>> {
+  fn init() -> HashMap<QuestionId, Question> {
     let file = include_str!("../questions.json");
     serde_json::from_str(file).expect("could not read file questions.json")
   }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct Answer {
+  id: String, 
+  question_id: String,
+  content: String
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -134,6 +143,18 @@ async fn delete_question(id: String, store: Store) -> Result<impl warp::Reply, w
   }
 }
 
+async fn add_anwer(store: Store, params: HashMap<String, String>) -> Result<impl warp::Reply, warp::Rejection> {
+  let answer = Answer{ 
+    id: String::from("1234"), 
+    question_id: String::from(params.get("relationId").unwrap()), 
+    content: String::from(params.get("content").unwrap()) 
+  };
+
+  store.answers.write().insert(answer.id.clone(), answer);
+
+  Ok(warp::reply::with_status("answer added", StatusCode::OK))
+}
+
 #[tokio::main]
 async fn main() {
   let store = Store::new();
@@ -148,7 +169,7 @@ async fn main() {
     .and(warp::path("questions"))
     .and(warp::query())
     .and(warp::path::end())
-    .and(store_filter)
+    .and(store_filter.clone())
     .and_then(get_questions);
 
   let add_question_route = warp::post()
@@ -173,10 +194,18 @@ async fn main() {
     .and(store_filter.clone())
     .and_then(delete_question);
 
+  let add_anwer_route = warp::post()
+    .and(warp::path("answers"))
+    .and(warp::path::end())
+    .and(store_filter.clone())
+    .and(warp::body::form())
+    .and_then(add_anwer);
+
   let routes = get_questions_route
     .or(add_question_route)
     .or(update_question_route)
     .or(delete_question_route)
+    .or(add_anwer_route)
     .with(cors)
     .recover(error_handler);
 
