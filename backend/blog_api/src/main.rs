@@ -1,5 +1,6 @@
 #![warn(clippy::all)]
 
+use tracing_subscriber::fmt::format::FmtSpan;
 use warp::hyper::Method;
 use warp::Filter;
 
@@ -16,6 +17,12 @@ use store::Store;
 async fn main() {
   let store = Store::new();
   let store_filter = warp::any().map(move || store.clone());
+  let log_filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "blog_api=info,warp=error".to_owned());
+
+  tracing_subscriber::fmt()
+    .with_env_filter(log_filter)
+    .with_span_events(FmtSpan::CLOSE)
+    .init();
 
   let cors = warp::cors()
     .allow_any_origin()
@@ -27,7 +34,14 @@ async fn main() {
     .and(warp::query())
     .and(warp::path::end())
     .and(store_filter.clone())
-    .and_then(get_questions);
+    .and_then(get_questions)
+    .with(warp::trace(|info| {
+      tracing::info_span!(
+        "get_questions request",
+        method = %info.method(),
+        path = %info.path(), 
+      )
+    }));
 
   let add_question_route = warp::post()
     .and(warp::path("questions"))
@@ -64,6 +78,7 @@ async fn main() {
     .or(delete_question_route)
     .or(add_anwer_route)
     .with(cors)
+    .with(warp::trace::request())
     .recover(handle_errors);
 
   println!("Listening on: http://locahost:3333");
