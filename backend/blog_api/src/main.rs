@@ -81,6 +81,6 @@ async fn main() {
     .with(warp::trace::request())
     .recover(handle_errors);
 
-  println!("Listening on: http://locahost:3333");
+  println!("Listening on: http://locahost:3333...");
   warp::serve(routes).run(([127, 0, 0, 1], 3333)).await;
 }
