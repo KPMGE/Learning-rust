@@ -15,7 +15,7 @@ use store::Store;
 
 #[tokio::main]
 async fn main() {
-  let store = Store::new();
+  let store = Store::new("postgres://postgres:1234@localhost:5432/blog_api").await;
   let store_filter = warp::any().map(move || store.clone());
   let log_filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "blog_api=info,warp=error".to_owned());
 
@@ -52,7 +52,7 @@ async fn main() {
 
   let update_question_route = warp::put()
     .and(warp::path("questions"))
-    .and(warp::path::param::<String>())
+    .and(warp::path::param::<i32>())
     .and(warp::path::end())
     .and(store_filter.clone())
     .and(warp::body::json())
@@ -60,7 +60,7 @@ async fn main() {
 
   let delete_question_route = warp::delete()
     .and(warp::path("questions"))
-    .and(warp::path::param::<String>())
+    .and(warp::path::param::<i32>())
     .and(warp::path::end())
     .and(store_filter.clone())
     .and_then(delete_question);

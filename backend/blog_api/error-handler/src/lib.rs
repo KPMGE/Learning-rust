@@ -2,22 +2,25 @@ use warp::{Rejection, Reply};
 use warp::reject::Reject;
 use warp::cors::CorsForbidden;
 use warp::body::BodyDeserializeError;
-use warp::hyper::{StatusCode};
+use warp::hyper::StatusCode;
 use std::fmt;
+use sqlx::error::Error as SqlxError;
 
 #[derive(Debug)]
 pub enum ApiError {
   ParseError(std::num::ParseIntError),
   MissingParamError,
-  QuestionNotFound
+  QuestionNotFound,
+  DatabaseQueryError(SqlxError),
 }
 
 impl std::fmt::Display for ApiError {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match self {
+    match &*self {
       ApiError::ParseError(ref err) => writeln!(f, "could not parse parameter: {}", err),
       ApiError::MissingParamError => writeln!(f, "missing parameter"), 
-      ApiError::QuestionNotFound => writeln!(f, "question not found") 
+      ApiError::QuestionNotFound => writeln!(f, "question not found"),
+      ApiError::DatabaseQueryError(err) => write!(f, "query could not be executed: {}", err)
     }
   }
 }

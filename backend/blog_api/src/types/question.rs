@@ -11,13 +11,10 @@ pub struct Question {
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Hash, Clone)]
 pub struct QuestionId(pub String);
 
-// impl FromStr for QuestionId {
-//   type Err = Error;
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct NewQuestion {
+  pub title: String,
+  pub content: String,
+  pub tags: Option<Vec<String>>,
+}
 
-//   fn from_str(id: &str) -> Result<Self, Self::Err> {
-//     match id.is_empty() {
-//       false => Ok(QuestionId(id.to_string())),
-//       true => Err(Error::new(ErrorKind::InvalidInput, "No id provided"))
-//     }
-//   }
-// }

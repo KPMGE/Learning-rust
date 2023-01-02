@@ -5,9 +5,15 @@ use std::collections::HashMap;
 #[derive(Debug)]
 pub struct Pagination {
   /// the index of the first item in the range
-  pub start: usize,
+  pub limit: Option<i32>,
   /// the index of the last item in the range
-  pub end: usize,
+  pub offset: i32,
+}
+
+impl Default for Pagination {
+  fn default() -> Self {
+    Pagination { limit: None, offset: 0 }
+  }
 }
 
 /// extract query params for the `/questions` route
@@ -15,17 +21,18 @@ pub struct Pagination {
 /// GET requests to this route can have a pagination attached so we can set a range like: 
 /// `/questions?start=1&end=10`
 pub fn extract_pagination(params: HashMap<String, String>) -> Result<Pagination, ApiError> {
-  if params.contains_key("start") && params.contains_key("end") {
+  if params.contains_key("limit") && params.contains_key("offset") {
     return Ok(Pagination {
-      start: params
-        .get("start")
+      limit: Some(params
+        .get("limit")
         .unwrap()
-        .parse::<usize>()
-        .map_err(ApiError::ParseError)?,
-      end: params
-        .get("end")
+        .parse()
+        .map_err(ApiError::ParseError)?
+        ),
+      offset: params
+        .get("offset")
         .unwrap()
-        .parse::<usize>()
+        .parse()
         .map_err(ApiError::ParseError)?,
     });
   }

@@ -14,7 +14,7 @@ pub async fn add_anwer(
     content: String::from(params.get("content").unwrap()),
   };
 
-  store.answers.write().insert(answer.id.clone(), answer);
+  // store.answers.write().insert(answer.id.clone(), answer);
 
   Ok(warp::reply::with_status("answer added", StatusCode::OK))
 }
