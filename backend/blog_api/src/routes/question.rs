@@ -1,4 +1,3 @@
-use error_handler::ApiError;
 use tracing::Level;
 use tracing::{instrument, event};
 use warp::hyper::StatusCode;
@@ -20,23 +19,20 @@ pub async fn get_questions(
     pagination = extract_pagination(params)?;
   }
 
-  let res: Vec<Question>  = match store.get_questions(pagination.limit, pagination.offset).await {
-    Ok(res) => res,
-    Err(err) => return Err(warp::reject::custom(ApiError::DatabaseQueryError(err))),
-  };
-
-  Ok(warp::reply::json(&res))
+  match store.get_questions(pagination.limit, pagination.offset).await {
+    Ok(res) => Ok(warp::reply::json(&res)),
+    Err(e) => return Err(warp::reject::custom(e)),
+  }
 }
 
 pub async fn add_question(
   store: Store,
   new_question: NewQuestion,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-  if let Err(e) = store.add_question(new_question).await {
-    return Err(warp::reject::custom(ApiError::DatabaseQueryError(e)));
+  match store.add_question(new_question).await {
+    Ok(_) => Ok(warp::reply::with_status("question added", StatusCode::OK)),
+    Err(e) => Err(warp::reject::custom(e))
   }
-
-  Ok(warp::reply::with_status("question added", StatusCode::OK))
 }
 
 pub async fn update_question(
@@ -44,21 +40,18 @@ pub async fn update_question(
   store: Store,
   question: Question,
 ) -> Result<impl warp::Reply, warp::Rejection> {    
-  let res = match store.update_question(question, id).await {
-    Ok(res) => res,
-    Err(e) => return Err(warp::reject::custom(ApiError::DatabaseQueryError(e))),
-  };
-
-  Ok(warp::reply::json(&res))
+  match store.update_question(question, id).await {
+    Ok(res) => Ok(warp::reply::json(&res)),
+    Err(e) => Err(warp::reject::custom(e)),
+  }
 }
 
 pub async fn delete_question(
   id: i32,
   store: Store,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-  if let Err(e) = store.delete_question(id).await {
-    return Err(warp::reject::custom(ApiError::DatabaseQueryError(e)));
+  match store.delete_question(id).await {
+    Ok(_) => Ok(warp::reply::with_status(format!("question {} deleted", id), StatusCode::OK)),
+    Err(e) => Err(warp::reject::custom(e)),
   }
-
-  Ok(warp::reply::with_status(format!("question {} deleted", id), StatusCode::OK))
 }
