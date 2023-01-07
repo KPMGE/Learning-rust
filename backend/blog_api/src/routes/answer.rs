@@ -10,7 +10,7 @@ pub async fn add_anwer(
 ) -> Result<impl warp::Reply, warp::Rejection> {
   let answer = Answer {
     id: AnswerId(String::from("1234")),
-    question_id: QuestionId(String::from(params.get("relationId").unwrap())),
+    question_id: QuestionId(params.get("relationId").unwrap().parse().unwrap()),
     content: String::from(params.get("content").unwrap()),
   };
 
