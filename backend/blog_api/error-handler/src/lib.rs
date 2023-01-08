@@ -4,7 +4,7 @@ use warp::cors::CorsForbidden;
 use warp::body::BodyDeserializeError;
 use warp::hyper::StatusCode;
 
-use tracing::{event, Level, instrument};
+use tracing::{event, Level};
 use std::fmt;
 
 #[derive(Debug)]
